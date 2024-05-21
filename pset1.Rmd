@@ -1,0 +1,569 @@
+---
+title: "pset1"
+output:
+  pdf_document: default
+  html_document: default
+date: "2023-11-07"
+---
+
+```{r} 
+# running the library first
+library(MatchIt)
+library(haven)
+library(readstata13)
+library(tidyverse)
+library(lmtest)
+library(sandwich)
+library(whitestrap)
+library(estimatr)
+library(parameters)
+library(clubSandwich)
+library(ggplot2)
+```
+
+Question 2. A) 
+
+```{r}
+# defining multiple vectors 
+consp <- c(70,65,90,95,110,115,80,200,190,100)
+inc <- c(80,100,120,140,160,180,200,220,240,260)
+
+# creating a matrix 
+x <- cbind(consp, inc)
+
+# print matrix x
+print(x)
+
+# regressing consumption on income
+model <- lm(consp ~ inc)
+
+model
+```
+
+Question 2. B) 
+
+```{r}
+# change consp and inc to individual matrices
+matrix_inc <- as.matrix(inc)
+ones <- c(1,1,1,1,1,1,1,1,1,1)
+matrix_inc <- as.matrix(cbind(ones,inc))
+matrix_consp <- as.matrix(consp)
+
+# transpose of income matrix
+t_inc <- as.matrix(t(matrix_inc))
+
+dim(t_inc)
+dim(matrix_inc)
+
+# multiply transpose and original consumption matrix
+covar <- (t_inc %*% matrix_inc)
+dim(covar)
+
+# find the beta
+beta <- solve(covar) %*% (t_inc %*% matrix_consp)
+
+beta
+```
+Question 2. C)
+
+```{r}
+# predict the regression 
+forecast <- predict(lm(consp ~ inc))
+
+forecast
+
+# calculate residuals 
+es <- forecast - consp
+
+# display residuals
+es
+
+# square the residuals
+esqr = es * es
+
+# calculate sigma
+es_squared = sum(esqr)/8
+
+# display sigma
+es_squared
+
+# calculate the variance of the beta
+var_beta <- es_squared * (solve(covar))
+
+# find the standard deviation by taking the square root of  absolute values in the variance matrix
+std = sqrt(abs(var_beta))
+
+# display standard deviation 
+std
+```
+Question 2. D)
+
+```{r}
+# creating diagonal matrix with squared individual errors as the principal diagonal elements
+matrix_esqr = as.matrix(diag(esqr))
+
+# display diagonal matrix
+matrix_esqr
+
+# calculate the "meat"
+mid_matrix = as.matrix(t(matrix_inc) %*% matrix_esqr %*% matrix_inc)
+
+# calculating robust standard errors
+
+robust_std = 1.25 * (solve(covar) %*% mid_matrix %*% solve(covar))
+
+# taking the square root of the standard errors
+robust_std <- sqrt(abs(robust_std))                   
+
+# display robust standard errors
+robust_std
+
+# find the robust standard errors in R using regression
+robust_model <- coeftest(model, vcov = vcovHC, type = "HC1")
+
+# display the model
+robust_model
+
+# Both the robust standard errors found are 0.23.
+```
+Question 2. E)
+
+```{r}
+
+# creating village variable
+village <- c(2,2,1,1,2,2,1,2,1,1)
+
+# combining all the variables together
+tmatrix <- as.matrix(cbind(village, es, consp, inc))
+
+# taking a subset of village 1 and creating error variable, income variable 
+tmatrix1 <- subset(tmatrix, village == 1)
+es1 <- tmatrix1[, 2]
+X1 <- tmatrix1[, 4]
+ones <- c(1,1,1,1,1)
+X1 <- as.matrix(cbind(ones,X1))
+
+# calculate the "meat" for village 1 
+mid1 = as.matrix(t(X1) %*% (es1 %*% t(es1)) %*% X1)
+
+# taking a subset of village 2 and creating error variable, income variable 
+tmatrix2 <- subset(tmatrix, village == 2)
+es2 <- tmatrix2[, 2]
+X2 <- tmatrix2[, 4]
+ones <- c(1,1,1,1,1)
+X2 <- as.matrix(cbind(ones,X2))
+
+# calculate the "meat" for village 2 
+mid2 = as.matrix(t(X2) %*% (es2 %*% t(es2)) %*% X2)
+
+# summing the meat
+meat = mid1 + mid2
+
+# calculating the variance 
+cl_std = 2.25 * (solve(covar) %*% meat %*% solve(covar))
+
+# taking the square root of the standard errors
+cl_std <- sqrt(abs(cl_std))                   
+
+# display clustered standard errors
+cl_std
+
+# find the clustered standard errors in R using regression
+cl_model <- coeftest(model, vcov = vcovHC, cluster = "village")
+
+# display the model
+cl_model
+
+# Both the clustered standard errors found are 0.23.
+```
+
+Question 3. A)
+
+```{r}
+# calling the dataset
+gbank <- read_dta("hh_98.dta")
+
+# run regression on total expenditure and female micro credit program 
+reg1 <- lm(lexptot ~ progvillf, data = gbank)
+
+# display the regression model
+reg1
+
+# The regression shows that a unit increase in female microcredit program increases total expenditure by 12.98 percentage point.
+
+# run regression on total expenditure and male micro credit program 
+reg2 <- lm(lexptot ~ progvillm, data = gbank)
+
+# display the regression model
+reg2
+
+# The regression shows that a unit increase in male microcredit program decreases total expenditure by 4.73 percentage point but the result is insignficant. The sign on the coefficient is different for male and female program may be because male may prioritize investment rather than spending on household needs. However, due to lack of controls, the coefficients is biased upwards.
+```
+
+
+Question 3. B)
+
+```{r}
+# run regression on total expenditure and female micro credit program with controls 
+reg3 <- lm(lexptot ~ progvillf + sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = gbank)
+
+# display regression model
+reg3
+
+# conducting the White test
+white_test(reg3)
+
+# We see that the p-value is less than 0.05 so we reject the null hypothesis that there is homoskedasticity. 
+
+# run regression on total expenditure and male micro credit program with controls 
+reg4 <- lm(lexptot ~ progvillm + sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = gbank)
+
+# With controls, the coefficient on female microfinance program dropped down by 1.78 percentage point. 
+
+# display the regression model 
+reg4
+
+# With controls, the coefficient on female microfinance program dropped down by 1.65 percentage point. 
+
+# conducting the White test
+white_test(reg4)
+```
+
+
+Question 3. C)
+
+```{r}
+# For both regressions, since p < 0.05, we reject the null hypothesis that there is homoskedasticity. 
+
+# robust standard errors for female microfinance program 
+reg5 <- coeftest(reg3, vcov = vcovHC, type = "HC1")
+
+# display regression 
+reg5
+
+# robust standard errors for male microfinance program 
+reg6 <- coeftest(reg4, vcov = vcovHC, type = "HC1")
+
+# display regression 
+reg6
+
+# We only find very small changes in the coefficients, standard error and the significance. 
+```
+
+Question 3. D)
+
+```{r}
+# regress total expenditure on the number of female participants in the household with controls 
+
+reg7 <- lm(lexptot ~ dfmfd + sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = gbank)
+
+# display regression 
+reg7
+
+# The results show that a unit increase in the number of female microcredit borrowers increases total expenditure by 9.05 percent. 
+
+# regress total expenditure on the number of male participants in the household with controls
+
+reg8 <- lm(lexptot ~ dmmfd + sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = gbank)
+
+# display regression 
+reg8
+
+# The results show that a unit increase in the number of male microcredit borrowers decreases total expenditure by 2.32 percent. 
+```
+
+Question 3. E)
+
+```{r}
+
+# regress total expenditure on the number of female participants in the household with controls and clustered standard errors 
+clreg <- lm_robust (lexptot ~ dfmfd + sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = gbank, clusters = villid)
+
+summary(clreg)
+
+# Using clustered standard errors decreases standard error and increases the statistical significance and restricts significance at 5%. 
+
+# regress total expenditure on the number of male participants in the household with controls and clustered standard errors
+
+clregm <- lm_robust (lexptot ~ dmmfd + sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = gbank, clusters = villid)
+
+summary(clregm)
+
+# Using clustered standard errors increases standard error but remains insignificant.
+
+```
+
+Question 3. F)
+
+```{r}
+
+# bootstrap standard errors of regression of male participants on total expenditure and controls
+standard_error(reg8, bootstrap = TRUE, vcov = "HC1", summary = TRUE, iterations = 1000)
+
+# bootstrap standard errors of regression of female participants on total expenditure and controls
+standard_error(reg7, bootstrap = TRUE, vcov = "HC1", summary = TRUE, iterations = 1000)
+
+# We find that our normal standard errors are overestimated and could cause Type II error.
+
+```
+
+Question 3. G)
+
+```{r}
+
+# bootstrap standard errors of regression of male participants on total expenditure and controls with clustered standard errors
+standard_error(reg8, bootstrap = TRUE, vcov = "CR1", vcov_args = list(cluster = gbank$villid), summary = TRUE, iterations = 1000)
+
+# bootstrap standard errors of regression of female participants on total expenditure and controls with clustered standard errors
+standard_error(reg7, bootstrap = TRUE, vcov = "CR1", vcov_args = list(cluster = gbank$villid), summary = TRUE, iterations = 1000)
+
+# We find that our normal standard errors are overestimated and could cause Type II error.
+```
+
+Question 4
+```{r}
+# ra 
+
+# running model and estimate outcomes on treated 
+lm_treated_ra <- lm(lexptot ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = subset(gbank, dfmfd == 1))
+
+summary(lm_treated_ra)
+gbank$lexptot_t1_ra <- predict(lm_treated_ra, gbank)
+
+# running model and estimate outcomes on untreated 
+lm_untreated_ra <- lm(lexptot ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = subset(gbank, dfmfd == 0))
+
+summary(lm_untreated_ra)
+gbank$lexptot_t0_ra <- predict(lm_untreated_ra, newdata = gbank)
+
+# creating the difference between treated and untreated 
+gbank$ATE_ra <- (gbank$lexptot_t1_ra - gbank$lexptot_t0_ra)
+
+# average treatment effects with regression adjustments
+t.test(gbank$ATE_ra, data = gbank)
+
+# create a subset for just the treated group 
+gbank_t1 <- gbank[gbank$dfmfd==1,]
+
+# treatment effects on the treated with regression adjustments
+t.test(gbank_t1$ATE_ra, data = gbank_t1)
+
+# ipw
+
+# find logit
+logit_ipw <- glm(dfmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, data = gbank, family = binomial)
+
+summary(logit_ipw)
+
+# get estimates of propensity scores on each observations
+gbank$logit_pscore <- predict(logit_ipw, newdata = gbank, type = "response")
+
+gbank <- mutate(gbank, lexptot_wt = ifelse(dfmfd==1, lexptot/logit_pscore, lexptot/(1-logit_pscore)))
+
+# running model and estimate outcomes on treated 
+lm_treated_ipw <- lm(lexptot ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, weights = lexptot_wt, data = subset(gbank, dfmfd == 1))
+
+summary(lm_treated_ipw)
+gbank$lexptot_t1_ipw <- predict(lm_treated_ipw, gbank)
+
+# running model and estimate outcomes on untreated 
+lm_untreated_ipw <- lm(lexptot ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, weights = lexptot_wt, data = subset(gbank, dfmfd == 0))
+
+summary(lm_untreated_ipw)
+gbank$lexptot_t0_ipw <- predict(lm_untreated_ipw, newdata = gbank)
+
+# creating the difference between treated and untreated 
+gbank$ATE_ipw <- (gbank$lexptot_t1_ipw - gbank$lexptot_t0_ipw)
+
+# average treatment effects with regression adjustments
+t.test(gbank$ATE_ipw, data = gbank)
+
+# create a subset for just the treated group 
+gbank_t1_ipw <- gbank[gbank$dfmfd==1,]
+
+# treatment effects on the treated with regression adjustments
+t.test(gbank_t1_ipw$ATE_ipw, data = gbank_t1_ipw)
+
+```
+
+Question 5. A)
+```{r}
+# estimate propensity score on yet unmatched data for female microcredit borrowers
+
+f_ps <- glm(dfmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, family = binomial (link = ("probit")), data = gbank)
+
+summary(f_ps)
+
+# estimate propensity score on yet unmatched data for male microcredit borrowers
+
+m_ps <- glm(dmmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, family = binomial (link = ("probit")), data = gbank)
+
+summary(m_ps)
+
+# assign each observation a propensity score for female and male microcredit borrowers
+
+prs_f <- data.frame(pr_score = predict(f_ps, type = "response"), dfmfd = f_ps$model$dfmfd)
+
+prs_m <- data.frame(pr_score = predict(m_ps, type = "response"), dmmfd = m_ps$model$dmmfd)
+
+head(prs_f)
+
+hh_98cb <- cbind(gbank, prs_f$pr_score)
+hh_98cbm <- cbind(gbank, prs_m$pr_score)
+
+# examine the region of common support in unmatched data for female microcredit borrowers 
+
+labs <- paste(c("Female_Borrower in HH", "No Female Borrower in HH"))
+prs_f %>%
+  mutate(dfmfd = ifelse(dfmfd == 1, labs[1], labs[2])) %>%
+  ggplot(aes(x = pr_score)) +
+  geom_histogram(color = "white") + 
+  facet_wrap(~dfmfd) +
+  xlab("Probability of Having a Female Microcredit Borrower") + 
+  theme_bw()
+
+# examine the region of common support in unmatched data for male microcredit borrowers
+labs <- paste(c("Male_Borrower in HH", "No Male Borrower in HH"))
+prs_m %>%
+  mutate(dmmfd = ifelse(dmmfd == 1, labs[1], labs[2])) %>%
+  ggplot(aes(x = pr_score)) +
+  geom_histogram(color = "white") + 
+  facet_wrap(~dmmfd) +
+  xlab("Probability of Having a Male Microcredit Borrower") + 
+  theme_bw()
+
+# checking balances in covariates 
+
+hh_98_cov <- c('sexhead', 'agehead', 'educhead', 'lnland', 'vaccess', 'pcirr', 'rice', 'wheat','milk', 'oil', 'egg')
+
+# carry out t-tests to see if differences are significant
+
+attach(gbank)
+t.test(sexhead ~ dfmfd)
+t.test(agehead ~ dfmfd)
+t.test(educhead ~ dfmfd)
+t.test(lnland ~ dfmfd)
+t.test(vaccess ~ dfmfd)
+t.test(pcirr ~ dfmfd)
+t.test(rice ~ dfmfd)
+t.test(wheat ~ dfmfd)
+t.test(milk ~ dfmfd)
+t.test(egg ~ dfmfd)
+detach(gbank)
+
+# educhead, lnland, and oil has significant differences between treatment and control.
+ 
+# omitting missing values for female
+hh_98_nomiss <- hh_98cb %>% 
+  select(lexptot, dfmfd, one_of(hh_98_cov)) %>%
+  na.omit()
+
+# omitting missing values for male
+hh_98_nomissm <- hh_98cbm %>% 
+  select(lexptot, dmmfd, one_of(hh_98_cov)) %>%
+  na.omit()
+
+# using propensity score matching to match using nearest neighbor for female
+mod_match <- matchit(data = hh_98_nomiss, dfmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, method = "nearest", ration = 1, caliper = c(0.1, lnland = 0.5, educhead = 2), distance = "glm", discard = "both", estimated = "ATT")
+
+summary(mod_match)
+
+# using propensity score matching to match using nearest neighbor for male
+mod_match1 <- matchit(data = hh_98_nomissm, dmmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, method = "nearest", ration = 1, caliper = c(0.1, lnland = 0.5, educhead = 2), distance = "glm", discard = "both", estimated = "ATT")
+
+summary(mod_match1)
+
+# creating a dataset of successful matches for female
+dta_m <- match.data(mod_match)
+
+# creating a dataset of successful matches for male
+dta_m1 <- match.data(mod_match1)
+
+# obtaining ATT on the matched data for female
+t.test(lexptot ~ dfmfd, data = dta_m)
+
+# obtaining ATT on the matched data for male
+t.test(lexptot ~ dmmfd, data = dta_m1)
+
+# regress treatment dummy on outcome and covariates that are different between treatment and control 
+
+lm(lexptot ~ dfmfd + educhead + lnland + oil, data = dta_m)
+
+lm(lexptot ~ dmmfd + educhead + lnland + oil, data = dta_m1)
+
+# The effects on female and male are very different.
+```
+
+Question 5. B)
+```{r}
+# covariate matching estimator for female microcredit borrowers
+mod_match3 <- matchit(data = hh_98_nomiss, dfmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, method = "nearest", ratio = 1, distance = "mahalanobis", estimated = "ATT")
+
+summary (mod_match3)
+
+# creating a dataset of successful matches for female
+dta_m3 <- match.data(mod_match3)
+
+# obtaining ATT on the matched data for female
+t.test(lexptot ~ dfmfd, data = dta_m3)
+
+# covariate matching estimator for male microcredit borrowers
+
+mod_match4 <- matchit(data = hh_98_nomissm, dmmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, method = "nearest", ratio = 1, distance = "mahalanobis", estimated = "ATT")
+
+summary (mod_match4)
+
+# creating a dataset of successful matches for male
+dta_m4 <- match.data(mod_match4)
+
+# obtaining ATT on the matched data for female
+t.test(lexptot ~ dmmfd, data = dta_m4)
+
+# The results from covariate matching are different than that from propensity score matching.
+```
+
+Question 5. C)
+```{r}
+for (x in 1:5) {
+  print(x)
+mod_model <- matchit(data = hh_98_nomiss, dfmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, method = "nearest", ration = x, caliper = c(0.1, lnland = 0.5, educhead = 2), distance = "glm", discard = "both", estimated = "ATT")
+
+summary(mod_model)
+
+# creating a dataset of successful matches for female
+dta <- match.data(mod_model)
+
+# obtaining ATT on the matched data for female
+t.test(lexptot ~ dfmfd, data = dta)
+}
+
+# The trade offs for using more nearest neighbors is that the coefficients will be biased whereas, trade offs for using fewer neighbors is that the coefficient will not be as precise as those with more nearest neighbors that leads to higher standard errors. This trade off similar to using nearest neighbors with replacement because it leads to precise estimates but with bias caused by the replacement. 
+
+```
+
+Question 5. D)
+```{r}
+# matching using euclidean distance
+mod_euclidean <- matchit(data = hh_98_nomiss, dfmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, method = "nearest", ratio = 1, distance = "euclidean", estimated = "ATT")
+
+summary(mod_euclidean)
+
+# creating a dataset of successful matches for female
+dta_euclidean <- match.data(mod_euclidean)
+
+# obtaining ATT on the matched data for female
+t.test(lexptot ~ dfmfd, data = dta_euclidean)
+
+# matching using mahalanobis distance
+mod_mhs <- matchit(data = hh_98_nomiss, dfmfd ~ sexhead + agehead + educhead + lnland + vaccess + pcirr + rice + wheat + milk + oil + egg, method = "nearest", ratio = 1, distance = "mahalanobis", estimated = "ATT")
+
+summary(mod_mhs)
+
+# creating a dataset of successful matches for female
+dta_mhs <- match.data(mod_mhs)
+
+# obtaining ATT on the matched data for female
+t.test(lexptot ~ dfmfd, data = dta_mhs)
+
+# The results are somewhat similar. However, using euclidean metric, the results are significant at 5% level whereas, using mahalanobis, it is more significant at 1% level.
+```
