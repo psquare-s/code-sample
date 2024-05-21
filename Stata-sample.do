@@ -13,7 +13,7 @@ set more off
 
 * set global path 
 
-global path /Users/prakritishakya/Desktop/GPRL_StataAssessment_2024
+global path /Users/prakritishakya/Desktop/StataAssessment_2024
 
 * call the demographics dataset 
 
